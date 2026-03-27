@@ -68,7 +68,6 @@ public class LicenseActivity extends Activity {
         tvId.setGravity(Gravity.CENTER);
         tvId.setPadding(0, dp(8), 0, dp(32));
         
-        // 改为传统匿名类，不用Lambda
         tvId.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
@@ -97,7 +96,6 @@ public class LicenseActivity extends Activity {
             LinearLayout.LayoutParams.MATCH_PARENT, dp(56));
         btnParams.setMargins(0, dp(24), 0, 0);
         
-        // 改为传统匿名类，不用Lambda
         btn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -127,7 +125,8 @@ public class LicenseActivity extends Activity {
         }
     }
     
-    public static void showError(Context ctx, String msg) {
+    // 修复：参数加 final
+    public static void showError(final Context ctx, final String msg) {
         if (ctx instanceof Activity) {
             ((Activity)ctx).runOnUiThread(new Runnable() {
                 @Override
