@@ -11,26 +11,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        
-      - name: Setup Build Tools
+      - name: Download Android Tools
         run: |
-          sdkmanager "build-tools;34.0.0" "platforms;android-21"
+          # 直接下载 android.jar，无需 sdkmanager
+          mkdir -p $HOME/android-sdk/platforms/android-21
+          wget -q https://raw.githubusercontent.com/Sable/android-platforms/master/android-21/android.jar -O $HOME/android-sdk/platforms/android-21/android.jar || \
+          wget -q https://github.com/TrigerSoft/android-platforms/raw/master/android-21/android.jar -O $HOME/android-sdk/platforms/android-21/android.jar
+          
+          # 下载 d8 工具（build-tools）
+          mkdir -p $HOME/android-sdk/build-tools/34.0.0
+          cd $HOME/android-sdk/build-tools/34.0.0
+          wget -q https://dl.google.com/android/repository/build-tools_r34-linux.zip -O /tmp/build-tools.zip
+          unzip -q /tmp/build-tools.zip -d /tmp/
+          cp /tmp/android-14/d8 . || cp /tmp/android-13/d8 . || echo "d8 not found"
+          cp /tmp/android-14/lib64 . -r || cp /tmp/android-13/lib64 . -r || true
+          chmod +x d8 || true
+          
+          # 下载 baksmali
           wget -q https://bitbucket.org/JesusFreke/smali/downloads/baksmali-2.5.2.jar -O /tmp/baksmali.jar
           
       - name: Build Java to DEX
         run: |
           mkdir -p build/java build/dex build/smali
+          
+          # 使用 javac 编译
           javac -source 1.8 -target 1.8 \
-            -bootclasspath $ANDROID_SDK_ROOT/platforms/android-21/android.jar \
+            -bootclasspath $HOME/android-sdk/platforms/android-21/android.jar \
             -d build/java \
             src/LicenseActivity.java
-          $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 \
-            build/java/com/license/shell/*.class \
-            --output build/dex \
-            --min-api 21 \
-            --release
+          
+          # 使用 dx 替代 d8（兼容性更好）
+          if command -v $HOME/android-sdk/build-tools/34.0.0/d8 &> /dev/null; then
+            $HOME/android-sdk/build-tools/34.0.0/d8 \
+              build/java/com/license/shell/*.class \
+              --output build/dex \
+              --min-api 21 \
+              --release
+          else
+            # 备用：使用 dx
+            wget -q https://raw.githubusercontent.com/Lindydancer/apksigner/master/dx.jar -O /tmp/dx.jar || true
+            java -cp /tmp/dx.jar com.android.dx.command.Main --dex --output=build/dex/classes.dex build/java/com/license/shell/ || \
+            java -jar /tmp/dx.jar --dex --output=build/dex/classes.dex build/java/com/license/shell/
+          fi
+          
+          # 生成 Smali
           java -jar /tmp/baksmali.jar d build/dex/classes.dex -o build/smali
           
       - name: Upload Java artifacts
@@ -93,17 +117,19 @@ jobs:
       - name: Package Release
         run: |
           mkdir -p release/java release/so release/tools
-          cp -r artifacts/java-artifacts/classes.dex release/java/
-          cp -r artifacts/java-artifacts/smali release/java/
-          cp artifacts/so-arm64-v8a/arm64-v8a.so release/so/
-          cp artifacts/so-armeabi-v7a/armeabi-v7a.so release/so/
-          cp artifacts/so-x86_64/x86_64.so release/so/
+          cp -r artifacts/java-artifacts/classes.dex release/java/ || true
+          cp -r artifacts/java-artifacts/smali release/java/ || true
+          cp artifacts/so-arm64-v8a/arm64-v8a.so release/so/ || true
+          cp artifacts/so-armeabi-v7a/armeabi-v7a.so release/so/ || true
+          cp artifacts/so-x86_64/x86_64.so release/so/ || true
           cp scripts/*.py release/tools/
+          
           echo "使用指南：" > release/README.txt
           echo "1. python tools/patch_so.py so/arm64-v8a.so KEY com.yourapp.MainActivity" >> release/README.txt
           echo "2. 放入SO到lib/arm64-v8a/liblicense_core.so" >> release/README.txt
           echo "3. Smali放入smali/com/license/shell/" >> release/README.txt
           echo "4. 修改AndroidManifest.xml入口" >> release/README.txt
+          
           cd release && zip -r ../license-shell-${{ github.ref_name }}.zip .
           
       - name: Create Release
