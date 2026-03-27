@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.View;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
@@ -25,10 +26,8 @@ public class LicenseActivity extends Activity {
         }
     }
     
-    // Native 方法：SO 直接控制流程，无返回值给 Java 判断
     public static native void nativeCheckEnvironment(Context ctx);
     public static native int nativeGetMachineId();
-    // 关键：SO 直接执行跳转或自杀，Java 无决策权
     public static native void nativeVerifyAndAct(Context ctx, String code);
     
     private EditText etCode;
@@ -48,7 +47,6 @@ public class LicenseActivity extends Activity {
         root.setBackgroundColor(Color.parseColor("#FF121212"));
         root.setPadding(dp(24), dp(48), dp(24), dp(24));
         
-        // 标题
         TextView tvTitle = new TextView(this);
         tvTitle.setText("设备授权验证");
         tvTitle.setTextSize(22);
@@ -57,27 +55,29 @@ public class LicenseActivity extends Activity {
         tvTitle.setPadding(0, 0, 0, dp(32));
         root.addView(tvTitle);
         
-        // ID 标签
         TextView tvIdLabel = new TextView(this);
         tvIdLabel.setText("您的设备ID（长按复制）：");
         tvIdLabel.setTextSize(14);
         tvIdLabel.setTextColor(Color.GRAY);
         root.addView(tvIdLabel);
         
-        // ID 显示
-        TextView tvId = new TextView(this);
+        final TextView tvId = new TextView(this);
         tvId.setText(String.valueOf(nativeGetMachineId()));
         tvId.setTextSize(28);
         tvId.setTextColor(Color.parseColor("#FF03DAC5"));
         tvId.setGravity(Gravity.CENTER);
         tvId.setPadding(0, dp(8), 0, dp(32));
-        tvId.setOnLongClickListener(v -> {
-            copyToClipboard(tvId.getText().toString());
-            return true;
+        
+        // 改为传统匿名类，不用Lambda
+        tvId.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                copyToClipboard(tvId.getText().toString());
+                return true;
+            }
         });
         root.addView(tvId);
         
-        // 输入框
         etCode = new EditText(this);
         etCode.setHint("请输入注册码");
         etCode.setTextColor(Color.WHITE);
@@ -89,7 +89,6 @@ public class LicenseActivity extends Activity {
             LinearLayout.LayoutParams.MATCH_PARENT, dp(56));
         root.addView(etCode, inputParams);
         
-        // 按钮：点击后控制权完全交给 SO
         Button btn = new Button(this);
         btn.setText("验证并进入");
         btn.setTextColor(Color.WHITE);
@@ -98,29 +97,25 @@ public class LicenseActivity extends Activity {
             LinearLayout.LayoutParams.MATCH_PARENT, dp(56));
         btnParams.setMargins(0, dp(24), 0, 0);
         
-        btn.setOnClickListener(v -> {
-            String code = etCode.getText().toString().trim();
-            // 关键：SO 直接执行以下之一：
-            // 1. 验证成功 → 调用 jumpToTarget() 跳转并 finish
-            // 2. 验证失败 → 调用 suicide() 直接杀死进程
-            // Java 层没有任何 if 判断，无法通过修改 Java 绕过
-            nativeVerifyAndAct(LicenseActivity.this, code);
-            
-            // 如果执行到这里，说明 SO 被移除或 Hook，立即自杀
-            suicide();
+        // 改为传统匿名类，不用Lambda
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String code = etCode.getText().toString().trim();
+                nativeVerifyAndAct(LicenseActivity.this, code);
+                suicide();
+            }
         });
         root.addView(btn, btnParams);
         
         setContentView(root);
     }
     
-    // 供 SO 调用的自杀方法（JNI 回调）
     public static void suicide() {
         android.os.Process.killProcess(android.os.Process.myPid());
         System.exit(0);
     }
     
-    // 供 SO 调用的跳转方法（JNI 回调）
     public static void jumpToTarget(Context ctx, String className) {
         try {
             Intent intent = new Intent(ctx, Class.forName(className));
@@ -132,11 +127,13 @@ public class LicenseActivity extends Activity {
         }
     }
     
-    // 供 SO 调用的错误提示（可选）
     public static void showError(Context ctx, String msg) {
         if (ctx instanceof Activity) {
-            ((Activity)ctx).runOnUiThread(() -> {
-                Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show();
+            ((Activity)ctx).runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show();
+                }
             });
         }
     }

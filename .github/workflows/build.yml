@@ -6,91 +6,72 @@ on:
   workflow_dispatch:
 
 jobs:
-  prepare-java:
+  build-all:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup JDK
+      - name: Setup Java 8
         uses: actions/setup-java@v4
         with:
-          java-version: '11'
+          java-version: '8'
           distribution: 'temurin'
       - name: Download Tools
         run: |
-          mkdir -p tools android-sdk/platforms/android-21
-          wget -q --timeout=30 https://raw.githubusercontent.com/LexaGuru/Smali-Builder/main/dx.jar -O tools/dx.jar || true
-          wget -q --timeout=30 https://github.com/Sable/android-platforms/raw/master/android-21/android.jar -O android-sdk/platforms/android-21/android.jar || true
-          wget -q --timeout=30 https://bitbucket.org/JesusFreke/smali/downloads/baksmali-2.5.2.jar -O tools/baksmali.jar || true
+          mkdir -p tools android-sdk
+          curl -L -o android-sdk/android.jar https://github.com/Sable/android-platforms/raw/master/android-21/android.jar
+          curl -L -o tools/dx.jar https://raw.githubusercontent.com/LexaGuru/Smali-Builder/main/dx.jar
+          curl -L -o tools/baksmali.jar https://bitbucket.org/JesusFreke/smali/downloads/baksmali-2.5.2.jar
       - name: Compile Java
         run: |
           mkdir -p build/classes build/smali
-          if [ -f "android-sdk/platforms/android-21/android.jar" ]; then
-            javac -source 1.8 -target 1.8 -bootclasspath android-sdk/platforms/android-21/android.jar -d build/classes src/LicenseActivity.java
-            if [ -f "tools/dx.jar" ]; then
-              java -jar tools/dx.jar --dex --output=build/classes.dex build/classes/com/license/shell/*.class || true
-              if [ -f "tools/baksmali.jar" ] && [ -f "build/classes.dex" ]; then
-                java -jar tools/baksmali.jar d build/classes.dex -o build/smali || true
-              fi
-            fi
-          fi
-          mkdir -p build/smali/com/license/shell
-      - name: Upload Java
-        uses: actions/upload-artifact@v4
-        with:
-          name: java-artifacts
-          path: build/smali/
-          if-no-files-found: warn
-
-  build-native:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        abi: [armeabi-v7a, arm64-v8a, x86_64]
-    steps:
-      - uses: actions/checkout@v4
+          javac -source 1.7 -target 1.7 -bootclasspath android-sdk/android.jar -d build/classes src/LicenseActivity.java
+          java -jar tools/dx.jar --dex --output=build/classes.dex build/classes/
+          java -jar tools/baksmali.jar d build/classes.dex -o build/smali/
       - name: Setup NDK
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26c
       - name: Build SO
         run: |
-          mkdir -p build/${{ matrix.abi }}
-          cmake -B build/${{ matrix.abi }} -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake -DANDROID_ABI=${{ matrix.abi }} -DANDROID_PLATFORM=android-21 -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-fvisibility=hidden -O3 -fno-stack-protector" -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--strip-all -s"
-          cmake --build build/${{ matrix.abi }}
-      - name: Rename SO
-        run: |
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            mkdir -p build/$abi
+            cmake -B build/$abi -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake -DANDROID_ABI=$abi -DANDROID_PLATFORM=android-21 -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-fvisibility=hidden -O3 -fno-stack-protector" -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--strip-all -s"
+            cmake --build build/$abi
+          done
           mkdir -p output_so
-          cp build/${{ matrix.abi }}/liblicense_core.so output_so/${{ matrix.abi }}.so
-      - name: Upload SO
+          cp build/armeabi-v7a/liblicense_core.so output_so/armeabi-v7a.so
+          cp build/arm64-v8a/liblicense_core.so output_so/arm64-v8a.so
+          cp build/x86_64/liblicense_core.so output_so/x86_64.so
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: so-${{ matrix.abi }}
-          path: output_so/${{ matrix.abi }}.so
+          name: build-files
+          path: |
+            build/smali/
+            output_so/
+            scripts/
 
   release:
-    needs: [prepare-java, build-native]
+    needs: build-all
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/checkout@v4
-      - name: Download artifacts
+      - name: Download
         uses: actions/download-artifact@v4
         with:
+          name: build-files
           path: artifacts
-          merge-multiple: false
       - name: Package
         run: |
-          mkdir -p release/java release/so release/tools
-          cp -r artifacts/java-artifacts/* release/java/ 2>/dev/null || true
-          cp artifacts/so-arm64-v8a/arm64-v8a.so release/so/ 2>/dev/null || true
-          cp artifacts/so-armeabi-v7a/armeabi-v7a.so release/so/ 2>/dev/null || true
-          cp artifacts/so-x86_64/x86_64.so release/so/ 2>/dev/null || true
-          cp scripts/*.py release/tools/ 2>/dev/null || true
+          mkdir -p release/smali release/so release/tools
+          cp -r artifacts/build/smali/* release/smali/
+          cp artifacts/output_so/*.so release/so/
+          cp scripts/*.py release/tools/
           echo "使用指南：" > release/README.txt
-          echo "1. python tools/patch_so.py so/arm64-v8a.so KEY com.yourapp.MainActivity" >> release/README.txt
-          echo "2. 放入SO到lib/arm64-v8a/liblicense_core.so" >> release/README.txt
-          echo "3. Smali放入smali/com/license/shell/" >> release/README.txt
-          echo "4. 修改AndroidManifest.xml入口" >> release/README.txt
+          echo "1. python patch_so.py so/arm64-v8a.so KEY com.yourapp.MainActivity" >> release/README.txt
+          echo "2. 合并smali和so" >> release/README.txt
+          echo "3. 修改入口Activity" >> release/README.txt
           cd release && zip -r ../license-shell-${{ github.ref_name }}.zip .
       - name: Release
         uses: softprops/action-gh-release@v1
