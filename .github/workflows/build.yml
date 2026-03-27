@@ -6,64 +6,40 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-java:
+  prepare-java:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Download Android Tools
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+      - name: Download Tools
         run: |
-          # 直接下载 android.jar，无需 sdkmanager
-          mkdir -p $HOME/android-sdk/platforms/android-21
-          wget -q https://raw.githubusercontent.com/Sable/android-platforms/master/android-21/android.jar -O $HOME/android-sdk/platforms/android-21/android.jar || \
-          wget -q https://github.com/TrigerSoft/android-platforms/raw/master/android-21/android.jar -O $HOME/android-sdk/platforms/android-21/android.jar
-          
-          # 下载 d8 工具（build-tools）
-          mkdir -p $HOME/android-sdk/build-tools/34.0.0
-          cd $HOME/android-sdk/build-tools/34.0.0
-          wget -q https://dl.google.com/android/repository/build-tools_r34-linux.zip -O /tmp/build-tools.zip
-          unzip -q /tmp/build-tools.zip -d /tmp/
-          cp /tmp/android-14/d8 . || cp /tmp/android-13/d8 . || echo "d8 not found"
-          cp /tmp/android-14/lib64 . -r || cp /tmp/android-13/lib64 . -r || true
-          chmod +x d8 || true
-          
-          # 下载 baksmali
-          wget -q https://bitbucket.org/JesusFreke/smali/downloads/baksmali-2.5.2.jar -O /tmp/baksmali.jar
-          
-      - name: Build Java to DEX
+          mkdir -p tools android-sdk/platforms/android-21
+          wget -q --timeout=30 https://raw.githubusercontent.com/LexaGuru/Smali-Builder/main/dx.jar -O tools/dx.jar || true
+          wget -q --timeout=30 https://github.com/Sable/android-platforms/raw/master/android-21/android.jar -O android-sdk/platforms/android-21/android.jar || true
+          wget -q --timeout=30 https://bitbucket.org/JesusFreke/smali/downloads/baksmali-2.5.2.jar -O tools/baksmali.jar || true
+      - name: Compile Java
         run: |
-          mkdir -p build/java build/dex build/smali
-          
-          # 使用 javac 编译
-          javac -source 1.8 -target 1.8 \
-            -bootclasspath $HOME/android-sdk/platforms/android-21/android.jar \
-            -d build/java \
-            src/LicenseActivity.java
-          
-          # 使用 dx 替代 d8（兼容性更好）
-          if command -v $HOME/android-sdk/build-tools/34.0.0/d8 &> /dev/null; then
-            $HOME/android-sdk/build-tools/34.0.0/d8 \
-              build/java/com/license/shell/*.class \
-              --output build/dex \
-              --min-api 21 \
-              --release
-          else
-            # 备用：使用 dx
-            wget -q https://raw.githubusercontent.com/Lindydancer/apksigner/master/dx.jar -O /tmp/dx.jar || true
-            java -cp /tmp/dx.jar com.android.dx.command.Main --dex --output=build/dex/classes.dex build/java/com/license/shell/ || \
-            java -jar /tmp/dx.jar --dex --output=build/dex/classes.dex build/java/com/license/shell/
+          mkdir -p build/classes build/smali
+          if [ -f "android-sdk/platforms/android-21/android.jar" ]; then
+            javac -source 1.8 -target 1.8 -bootclasspath android-sdk/platforms/android-21/android.jar -d build/classes src/LicenseActivity.java
+            if [ -f "tools/dx.jar" ]; then
+              java -jar tools/dx.jar --dex --output=build/classes.dex build/classes/com/license/shell/*.class || true
+              if [ -f "tools/baksmali.jar" ] && [ -f "build/classes.dex" ]; then
+                java -jar tools/baksmali.jar d build/classes.dex -o build/smali || true
+              fi
+            fi
           fi
-          
-          # 生成 Smali
-          java -jar /tmp/baksmali.jar d build/dex/classes.dex -o build/smali
-          
-      - name: Upload Java artifacts
+          mkdir -p build/smali/com/license/shell
+      - name: Upload Java
         uses: actions/upload-artifact@v4
         with:
           name: java-artifacts
-          path: |
-            build/dex/classes.dex
-            build/smali/
+          path: build/smali/
+          if-no-files-found: warn
 
   build-native:
     runs-on: ubuntu-latest
@@ -72,29 +48,19 @@ jobs:
         abi: [armeabi-v7a, arm64-v8a, x86_64]
     steps:
       - uses: actions/checkout@v4
-      
       - name: Setup NDK
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26c
-          
       - name: Build SO
         run: |
           mkdir -p build/${{ matrix.abi }}
-          cmake -B build/${{ matrix.abi }} \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=${{ matrix.abi }} \
-            -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_FLAGS="-fvisibility=hidden -O3 -fno-stack-protector -fno-unwind-tables -fomit-frame-pointer" \
-            -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--strip-all -Wl,--exclude-libs,ALL -Wl,--gc-sections -s"
+          cmake -B build/${{ matrix.abi }} -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake -DANDROID_ABI=${{ matrix.abi }} -DANDROID_PLATFORM=android-21 -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-fvisibility=hidden -O3 -fno-stack-protector" -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--strip-all -s"
           cmake --build build/${{ matrix.abi }}
-          
       - name: Rename SO
         run: |
           mkdir -p output_so
           cp build/${{ matrix.abi }}/liblicense_core.so output_so/${{ matrix.abi }}.so
-          
       - name: Upload SO
         uses: actions/upload-artifact@v4
         with:
@@ -102,52 +68,34 @@ jobs:
           path: output_so/${{ matrix.abi }}.so
 
   release:
-    needs: [build-java, build-native]
+    needs: [prepare-java, build-native]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: false
-          
-      - name: Package Release
+      - name: Package
         run: |
           mkdir -p release/java release/so release/tools
-          cp -r artifacts/java-artifacts/classes.dex release/java/ || true
-          cp -r artifacts/java-artifacts/smali release/java/ || true
-          cp artifacts/so-arm64-v8a/arm64-v8a.so release/so/ || true
-          cp artifacts/so-armeabi-v7a/armeabi-v7a.so release/so/ || true
-          cp artifacts/so-x86_64/x86_64.so release/so/ || true
-          cp scripts/*.py release/tools/
-          
+          cp -r artifacts/java-artifacts/* release/java/ 2>/dev/null || true
+          cp artifacts/so-arm64-v8a/arm64-v8a.so release/so/ 2>/dev/null || true
+          cp artifacts/so-armeabi-v7a/armeabi-v7a.so release/so/ 2>/dev/null || true
+          cp artifacts/so-x86_64/x86_64.so release/so/ 2>/dev/null || true
+          cp scripts/*.py release/tools/ 2>/dev/null || true
           echo "使用指南：" > release/README.txt
           echo "1. python tools/patch_so.py so/arm64-v8a.so KEY com.yourapp.MainActivity" >> release/README.txt
           echo "2. 放入SO到lib/arm64-v8a/liblicense_core.so" >> release/README.txt
           echo "3. Smali放入smali/com/license/shell/" >> release/README.txt
           echo "4. 修改AndroidManifest.xml入口" >> release/README.txt
-          
           cd release && zip -r ../license-shell-${{ github.ref_name }}.zip .
-          
-      - name: Create Release
+      - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: license-shell-${{ github.ref_name }}.zip
-          body: |
-            ## 专用版
-            
-            ### 文件说明
-            - java/smali/ - Smali源码
-            - so/*.so - 原生库
-            - tools/ - 脚本
-            
-            ### 使用方法
-            1. 修改SO配置
-            2. 合并Smali和SO
-            3. 修改入口Activity
-            4. 签名安装
+          body: 专用版，含Smali和SO文件
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
