@@ -2,44 +2,44 @@ name: Build License Shell
 
 on:
   push:
-    tags: [ 'v*' ]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
   build-java:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+      - uses: actions/checkout@v4
       
-    - name: Setup Build Tools
-      run: |
-        sdkmanager "build-tools;34.0.0" "platforms;android-21"
-        wget -q https://bitbucket.org/JesusFreke/smali/downloads/baksmali-2.5.2.jar -O /tmp/baksmali.jar
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
         
-    - name: Build Java to DEX
-      run: |
-        mkdir -p build/java build/dex build/smali
-        javac -source 1.8 -target 1.8 \
-          -bootclasspath $ANDROID_SDK_ROOT/platforms/android-21/android.jar \
-          -d build/java \
-          src/LicenseActivity.java
-        $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 \
-          build/java/com/license/shell/*.class \
-          --output build/dex \
-          --min-api 21 \
-          --release
-        java -jar /tmp/baksmali.jar d build/dex/classes.dex -o build/smali
-        
-    - name: Upload Java artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: java-artifacts
-        path: |
-          build/dex/classes.dex
-          build/smali/
+      - name: Setup Build Tools
+        run: |
+          sdkmanager "build-tools;34.0.0" "platforms;android-21"
+          wget -q https://bitbucket.org/JesusFreke/smali/downloads/baksmali-2.5.2.jar -O /tmp/baksmali.jar
+          
+      - name: Build Java to DEX
+        run: |
+          mkdir -p build/java build/dex build/smali
+          javac -source 1.8 -target 1.8 \
+            -bootclasspath $ANDROID_SDK_ROOT/platforms/android-21/android.jar \
+            -d build/java \
+            src/LicenseActivity.java
+          $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 \
+            build/java/com/license/shell/*.class \
+            --output build/dex \
+            --min-api 21 \
+            --release
+          java -jar /tmp/baksmali.jar d build/dex/classes.dex -o build/smali
+          
+      - name: Upload Java artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-artifacts
+          path: |
+            build/dex/classes.dex
+            build/smali/
 
   build-native:
     runs-on: ubuntu-latest
@@ -47,81 +47,81 @@ jobs:
       matrix:
         abi: [armeabi-v7a, arm64-v8a, x86_64]
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup NDK
-      uses: nttld/setup-ndk@v1
-      with:
-        ndk-version: r26c
-        
-    - name: Build SO
-      run: |
-        mkdir -p build/${{ matrix.abi }}
-        cmake -B build/${{ matrix.abi }} \
-          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-          -DANDROID_ABI=${{ matrix.abi }} \
-          -DANDROID_PLATFORM=android-21 \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_C_FLAGS="-fvisibility=hidden -O3 -fno-stack-protector -fno-unwind-tables -fomit-frame-pointer" \
-          -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--strip-all -Wl,--exclude-libs,ALL -Wl,--gc-sections -s"
-        cmake --build build/${{ matrix.abi }}
-        
-    - name: Rename SO
-      run: |
-        mkdir -p output_so
-        cp build/${{ matrix.abi }}/liblicense_core.so output_so/${{ matrix.abi }}.so
-        
-    - name: Upload SO
-      uses: actions/upload-artifact@v4
-      with:
-        name: so-${{ matrix.abi }}
-        path: output_so/${{ matrix.abi }}.so
+      - uses: actions/checkout@v4
+      
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26c
+          
+      - name: Build SO
+        run: |
+          mkdir -p build/${{ matrix.abi }}
+          cmake -B build/${{ matrix.abi }} \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=android-21 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-fvisibility=hidden -O3 -fno-stack-protector -fno-unwind-tables -fomit-frame-pointer" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--strip-all -Wl,--exclude-libs,ALL -Wl,--gc-sections -s"
+          cmake --build build/${{ matrix.abi }}
+          
+      - name: Rename SO
+        run: |
+          mkdir -p output_so
+          cp build/${{ matrix.abi }}/liblicense_core.so output_so/${{ matrix.abi }}.so
+          
+      - name: Upload SO
+        uses: actions/upload-artifact@v4
+        with:
+          name: so-${{ matrix.abi }}
+          path: output_so/${{ matrix.abi }}.so
 
   release:
     needs: [build-java, build-native]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-        merge-multiple: false
-        
-    - name: Package Release
-      run: |
-        mkdir -p release/java release/so release/tools
-        cp -r artifacts/java-artifacts/classes.dex release/java/
-        cp -r artifacts/java-artifacts/smali release/java/
-        cp artifacts/so-arm64-v8a/arm64-v8a.so release/so/
-        cp artifacts/so-armeabi-v7a/armeabi-v7a.so release/so/
-        cp artifacts/so-x86_64/x86_64.so release/so/
-        cp scripts/*.py release/tools/
-        echo "使用指南：" > release/README.txt
-        echo "1. python tools/patch_so.py so/arm64-v8a.so \"KEY\" \"com.yourapp.Main\"" >> release/README.txt
-        echo "2. 放入SO和Smali，修改入口" >> release/README.txt
-        cd release && zip -r ../license-shell-${{ github.ref_name }}.zip .
-        
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: license-shell-${{ github.ref_name }}.zip
-        body: |
-          ## 专用版
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: false
           
-          ### 文件说明
-          - `java/smali/` - Smali源码（复制到smali目录）
-          - `so/*.so` - 原生库（重命名为liblicense_core.so）
-          - `tools/` - 配置修改和注册机脚本
+      - name: Package Release
+        run: |
+          mkdir -p release/java release/so release/tools
+          cp -r artifacts/java-artifacts/classes.dex release/java/
+          cp -r artifacts/java-artifacts/smali release/java/
+          cp artifacts/so-arm64-v8a/arm64-v8a.so release/so/
+          cp artifacts/so-armeabi-v7a/armeabi-v7a.so release/so/
+          cp artifacts/so-x86_64/x86_64.so release/so/
+          cp scripts/*.py release/tools/
+          echo "使用指南：" > release/README.txt
+          echo "1. python tools/patch_so.py so/arm64-v8a.so KEY com.yourapp.MainActivity" >> release/README.txt
+          echo "2. 放入SO到lib/arm64-v8a/liblicense_core.so" >> release/README.txt
+          echo "3. Smali放入smali/com/license/shell/" >> release/README.txt
+          echo "4. 修改AndroidManifest.xml入口" >> release/README.txt
+          cd release && zip -r ../license-shell-${{ github.ref_name }}.zip .
           
-          ### 使用方法
-          1. 电脑运行：`python tools/patch_so.py so/arm64-v8a.so "你的KEY" "目标Activity"`
-          2. 打开APK，SO放入`lib/arm64-v8a/liblicense_core.so`
-          3. Smali放入`smali/com/license/shell/`
-          4. 修改AndroidManifest.xml入口为`com.license.shell.LicenseActivity`
-          5. 签名安装
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: license-shell-${{ github.ref_name }}.zip
+          body: |
+            ## 专用版
+            
+            ### 文件说明
+            - java/smali/ - Smali源码
+            - so/*.so - 原生库
+            - tools/ - 脚本
+            
+            ### 使用方法
+            1. 修改SO配置
+            2. 合并Smali和SO
+            3. 修改入口Activity
+            4. 签名安装
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
