@@ -429,6 +429,7 @@ static void loadSavedState(JNIEnv *env) {
     }
 }
 
+// 内部工具函数：清除注册信息（无jobject参数）
 static void clearRegistration(JNIEnv *env) {
     if (g_ctx == nullptr) return;
     putSPBoolean(env, g_ctx->app_context, KEY_REGISTERED, false);
@@ -440,6 +441,7 @@ static void clearRegistration(JNIEnv *env) {
     g_ctx->machine_id = -1;
 }
 
+// 内部工具函数：获取机器ID（无jobject参数）
 static int getMachineId(JNIEnv *env) {
     if (g_ctx == nullptr) return -1;
     if (g_ctx->machine_id == -1) {
@@ -514,11 +516,12 @@ static jboolean onLicenseActivityCreate(JNIEnv *env, jobject thiz, jobject activ
     return false;
 }
 
+// JNI暴露方法：获取机器ID（带jobject参数，供Java层调用）
 static jstring getMachineId(JNIEnv *env, jobject thiz) {
     if (g_ctx == nullptr || !g_ctx->is_sign_valid) {
         return env->NewStringUTF("无效ID");
     }
-    int machine_id = getMachineId(env);
+    int machine_id = getMachineId(env); // 调用内部工具函数（int返回值）
     char id_str[20] = {0};
     sprintf(id_str, "%d", machine_id);
     return env->NewStringUTF(id_str);
@@ -630,8 +633,9 @@ static jboolean checkMainActivityAccess(JNIEnv *env, jobject thiz, jobject activ
     return true;
 }
 
+// JNI暴露方法：清除注册信息（带jobject参数，供Java层调用）
 static void clearRegistration(JNIEnv *env, jobject thiz) {
-    clearRegistration(env);
+    clearRegistration(env); // 调用内部工具函数（无jobject参数）
 }
 
 static jboolean isRegistered(JNIEnv *env, jobject thiz) {
@@ -643,16 +647,23 @@ static jlong getExpireTime(JNIEnv *env, jobject thiz) {
     return g_ctx->expire_time;
 }
 
-// ====================  JNI动态注册 ====================
+// ====================  JNI动态注册（修复函数重载歧义+数组终止符） ====================
+// 显式声明函数指针类型，解决重载歧义
+typedef jstring (*GetMachineIdFunc)(JNIEnv*, jobject);
+typedef void (*ClearRegistrationFunc)(JNIEnv*, jobject);
+
 static const JNINativeMethod gMethods[] = {
     {"nativeInit", "(Landroid/content/Context;)V", (void*)nativeInit},
     {"onLicenseActivityCreate", "(Landroid/app/Activity;)Z", (void*)onLicenseActivityCreate},
-    {"getMachineId", "()Ljava/lang/String;", (void*)getMachineId},
+    // 显式转换为带2个参数的函数指针，匹配JNI方法签名
+    {"getMachineId", "()Ljava/lang/String;", (void*)(static_cast<GetMachineIdFunc>(getMachineId))},
     {"verifyLicenseCode", "(Landroid/app/Activity;Ljava/lang/String;)Ljava/lang/String;", (void*)verifyLicenseCode},
     {"checkMainActivityAccess", "(Landroid/app/Activity;)Z", (void*)checkMainActivityAccess},
-    {"clearRegistration", "()V", (void*)clearRegistration},
+    // 显式转换为带2个参数的函数指针，匹配JNI方法签名
+    {"clearRegistration", "()V", (void*)(static_cast<ClearRegistrationFunc>(clearRegistration))},
     {"isRegistered", "()Z", (void*)isRegistered},
     {"getExpireTime", "()J", (void*)getExpireTime},
+    {NULL, NULL, NULL} // 必须添加数组终止符，否则sizeof计算失败
 };
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
@@ -660,12 +671,14 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
         return -1;
     }
+    // 【必须修改】替换为你的Java层NativeLicenseManager类路径（包名替换后）
     jclass cls = env->FindClass("com/yourpackage/license/NativeLicenseManager");
     if (cls == NULL) {
         LOGE("找不到NativeLicenseManager类，请检查包名是否一致！");
         return -1;
     }
-    int num_methods = sizeof(gMethods) / sizeof(gMethods[0]);
+    // 数组已添加终止符，sizeof计算正常（减去终止符条目）
+    int num_methods = sizeof(gMethods) / sizeof(gMethods[0]) - 1;
     if (env->RegisterNatives(cls, gMethods, num_methods) < 0) {
         LOGE("JNI动态注册失败！");
         return -1;

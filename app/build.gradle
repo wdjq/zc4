@@ -5,8 +5,8 @@ plugins {
 android {
     namespace 'com.yourpackage.license'
     compileSdk 34
-    ndkVersion "25.1.8937393" // 与GitHub Actions环境一致
-    ndkPath System.getenv("ANDROID_NDK_HOME") ?: "" // 从环境变量读取NDK路径
+    ndkVersion "25.1.8937393" // 与GitHub Actions环境完全匹配
+    ndkPath System.getenv("ANDROID_NDK_HOME") ?: "" // 显式指定NDK路径
 
     defaultConfig {
         applicationId 'com.yourpackage.license'
@@ -17,18 +17,18 @@ android {
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
-        // NDK编译+防逆向优化
+        // NDK编译配置（移除无效的'-s'参数，保留防逆向优化）
         externalNativeBuild {
             cmake {
-                cppFlags "-std=c++14 -frtti -fexceptions -fvisibility=hidden -O2 -s"
+                cppFlags "-std=c++14 -frtti -fexceptions -fvisibility=hidden -O2"
                 arguments "-DANDROID_STL=c++_shared"
-                abiFilters 'armeabi-v7a', 'arm64-v8a' // 主流架构
+                abiFilters 'armeabi-v7a', 'arm64-v8a' // 主流手机架构
             }
         }
 
         buildFeatures {
             viewBinding true
-            buildConfig false // 关闭无用特性
+            buildConfig false // 关闭无用特性，减少攻击面
         }
     }
 
@@ -69,14 +69,13 @@ android {
     }
 }
 
-// 修复后的依赖声明
 dependencies {
     implementation libs.androidx.core
     implementation libs.androidx.appcompat
     implementation libs.material
     implementation libs.androidx.constraintlayout
     
-    // 测试依赖：直接使用坐标，无Version Catalog依赖
+    // 测试依赖：直接使用坐标，避免Version Catalog冲突
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
