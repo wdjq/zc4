@@ -1,26 +1,20 @@
-cmake_minimum_required(VERSION 3.10.2)
+cmake_minimum_required(VERSION 3.22.1)
 
-# 设置C++标准
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+project("license_guard")
 
-# 定义库
 add_library(
-        native-lib
+        license_guard
         SHARED
-        native-lib.cpp
-        utils.cpp
+        native_license.cpp
 )
 
-# 包含Android日志库
 find_library(
         log-lib
         log
 )
 
-# 链接库
 target_link_libraries(
-        native-lib
+        license_guard
         android
         ${log-lib}
 )
