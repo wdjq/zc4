@@ -2,9 +2,8 @@ name: Android Unsigned Release Build
 # 触发条件：推送v开头的标签触发（如v1.0.0），也可修改为push到main分支触发
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    tags:
+      - 'v*'
 
 # 全局环境变量，与gradle配置完全对齐
 env:
@@ -48,11 +47,11 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon
 
-
+      # 5. 上传构建产物，严格保留1天，到期自动删除
       - name: Upload Unsigned APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-release-apk-${{ github.ref_name }}
           path: app/build/outputs/apk/release/*.apk
-          retention-days: 1 
-          if-no-files-found: error 
+          retention-days: 1 # 产物仅保留1天，完全符合要求
+          if-no-files-found: error # 构建失败无APK时直接抛出错误
