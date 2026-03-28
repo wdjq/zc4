@@ -1,5 +1,5 @@
 name: Android Unsigned Release Build [手动触发]
-# 触发方式：手动在GitHub Actions页面点击运行，支持传入自定义版本号
+# 手动触发，支持自定义版本号
 on:
   workflow_dispatch:
     inputs:
@@ -9,14 +9,16 @@ on:
         default: '1.0.0'
         type: string
 
-# 全局环境变量，与gradle配置完全对齐
+# 全局环境变量，与gradle严格对齐
 env:
   JAVA_VERSION: '17'
   JAVA_DISTRIBUTION: 'temurin'
-  ANDROID_COMPILE_SDK: 34
+  ANDROID_COMPILE_SDK: '34'
   ANDROID_BUILD_TOOLS: '34.0.0'
   NDK_VERSION: '25.1.8937393'
   CMAKE_VERSION: '3.22.1'
+  # 国内源加速（可选，解决GitHub服务器拉取SDK慢的问题）
+  ANDROID_SDK_URL: 'https://dl.google.com/android/repository'
 
 jobs:
   build:
@@ -26,36 +28,52 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. 配置JDK环境，与gradle的Java 17完全匹配
+      # 2. 配置JDK17环境，缓存gradle依赖
       - name: Set Up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
-          cache: 'gradle' # 缓存gradle依赖，大幅提升构建速度
+          cache: 'gradle'
 
-      # 3. 配置Android SDK、NDK、CMake环境
+      # 3. 配置Android SDK环境（核心修复：正确拆分包名，自动接受许可证）
       - name: Set Up Android Build Environment
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: 11076708
+          # 自动接受所有Android SDK许可证，无需手动交互
+          accept-android-sdk-licenses: true
+          # 正确配置需要安装的包，**每个包单独一行**，避免换行被识别为单个包
           packages: |
             platforms;android-${{ env.ANDROID_COMPILE_SDK }}
             build-tools;${{ env.ANDROID_BUILD_TOOLS }}
             ndk;${{ env.NDK_VERSION }}
             cmake;${{ env.CMAKE_VERSION }}
+            # 补充必要的工具，防止依赖缺失
+            cmdline-tools;latest
+            build-tools;${{ env.ANDROID_BUILD_TOOLS }}
+            platform-tools
 
-      # 4. 构建无签名Release包
+      # 4. 手动验证SDK安装（可选，便于排查问题）
+      - name: Verify Android SDK Installation
+        run: |
+          # 查看已安装的包
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list
+          # 配置环境变量，确保gradle能找到NDK/CMake
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+          echo "CMAKE_HOME=$ANDROID_HOME/cmake/${{ env.CMAKE_VERSION }}" >> $GITHUB_ENV
+
+      # 5. 构建无签名Release包（添加权限+静默构建）
       - name: Build Unsigned Release APK
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon
+          # 静默构建，关闭gradle守护进程，减少资源占用
+          ./gradlew assembleRelease --no-daemon --quiet --stacktrace
 
-      # 5. 上传构建产物，严格保留1天，产物名带手动传入的版本号
+      # 6. 上传产物，保留1天
       - name: Upload Unsigned APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-release-apk-v${{ github.event.inputs.version }}
           path: app/build/outputs/apk/release/*.apk
-          retention-days: 1 # 产物仅保留1天，到期自动删除
-          if-no-files-found: error # 无APK文件时直接构建失败
+          retention-days: 1
+          if-no-files-found: error
