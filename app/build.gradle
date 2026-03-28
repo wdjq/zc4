@@ -2,10 +2,13 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// 全局禁用Gradle 9不兼容的配置缓存（替代嵌套的buildCache配置）
+gradle.configurationCache.enabled = false
+
 android {
     namespace 'com.yourpackage.license'
     compileSdk 34
-    ndkVersion "25.1.8937393" // 与NDK环境严格匹配
+    ndkVersion "25.1.8937393"
     ndkPath System.getenv("ANDROID_NDK_HOME") ?: ""
 
     defaultConfig {
@@ -17,7 +20,7 @@ android {
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
-        // 精简NDK编译配置，移除Gradle 9不兼容的参数
+        // NDK编译配置（精简到最低必要参数）
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++14 -frtti -fexceptions -fvisibility=hidden -O2"
@@ -26,11 +29,10 @@ android {
             }
         }
 
-        // 仅保留必要的构建特性
         buildFeatures {
             viewBinding true
             buildConfig false
-            prefab false // 关闭无用的Prefab特性，避免Gradle 9警告
+            prefab false // 关闭无用特性，避免Gradle 9解析警告
         }
     }
 
@@ -39,7 +41,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // 唯一的externalNativeBuild配置（彻底移除冗余）
+    // 唯一的externalNativeBuild配置（无冗余）
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
@@ -54,10 +56,7 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             debuggable false
             jniDebuggable false
-            // 关闭Gradle 9已废弃的buildCache配置
-            buildCache {
-                enabled false
-            }
+            // 【关键修复】删除嵌套的buildCache配置（Gradle 9不支持该位置配置）
         }
         debug {
             minifyEnabled false
@@ -66,21 +65,16 @@ android {
         }
     }
 
-    // 适配Gradle 9的Lint配置
+    // Lint配置（兼容Gradle 9的警告处理）
     lint {
         abortOnError false
         checkReleaseBuilds false
         disable 'MissingTranslation', 'ExtraTranslation'
-        warningMode 'none' // 抑制非关键警告，避免阻断构建
-    }
-
-    // 禁用Gradle 9不兼容的配置缓存（解决Deprecated警告）
-    configurationCache {
-        enabled false
+        warningMode 'none'
     }
 }
 
-// 直接指定依赖版本，抛弃Version Catalog，避免冲突
+// 直接指定依赖版本（无Version Catalog，无兼容性问题）
 dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
