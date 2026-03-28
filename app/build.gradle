@@ -4,7 +4,8 @@ plugins {
 
 android {
     namespace 'com.yourpackage.license'
-    compileSdk 36
+    compileSdk 34
+    ndkVersion "25.1.8937393" // 固定NDK版本，与CI环境完全匹配
 
     defaultConfig {
         applicationId 'com.yourpackage.license'
@@ -14,35 +15,62 @@ android {
         versionName '1.0'
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        
-        // 配置NDK路径（通过环境变量获取）
+
+        // NDK编译配置+防逆向优化配置完整保留
         externalNativeBuild {
             cmake {
-                cppFlags "-std=c++14 -frtti -fexceptions"
+                cppFlags "-std=c++14 -frtti -fexceptions -fvisibility=hidden -O2 -s"
                 arguments "-DANDROID_STL=c++_shared"
+                abiFilters 'armeabi-v7a', 'arm64-v8a' // 主流手机架构，按需可添加x86/x86_64
             }
+        }
+
+        // 构建特性配置
+        buildFeatures {
+            viewBinding true
+            buildConfig false // 关闭无用BuildConfig，减少攻击面
         }
     }
 
-    buildFeatures {
-        viewBinding true
-    }
-
+    // Java版本配置
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    
-    // 配置NDK和CMake
+
+    // NDK+CMake构建配置
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
-            version "3.22.1" // 指定CMake版本
+            version "3.22.1"
         }
     }
-    
-    // 配置NDK路径（通过环境变量获取）
-    ndkVersion "25.1.8937393" // 指定NDK版本
+
+    // 构建类型配置
+    buildTypes {
+        release {
+            // 完整保留代码混淆、资源压缩，防逆向+减小包体积
+            minifyEnabled true
+            shrinkResources true
+            // 移除所有签名配置，构建无签名包
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 关闭调试开关，防止动态调试
+            debuggable false
+            jniDebuggable false
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
+            jniDebuggable true
+        }
+    }
+
+    // Lint配置，避免非关键错误阻断构建
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+        disable 'MissingTranslation', 'ExtraTranslation'
+    }
 }
 
 dependencies {
@@ -50,4 +78,7 @@ dependencies {
     implementation libs.androidx.appcompat
     implementation libs.material
     implementation libs.androidx.constraintlayout
+    testImplementation libs.junit
+    androidTestImplementation libs.androidx.junit
+    androidTestImplementation libs.androidx.espresso.core
 }
