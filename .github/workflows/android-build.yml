@@ -56,13 +56,11 @@ jobs:
           echo "CMAKE_HOME=/usr/local/lib/android/sdk/cmake/${{ env.CMAKE_VERSION }}" >> $GITHUB_ENV
           echo "PATH=/usr/local/lib/android/sdk/cmake/${{ env.CMAKE_VERSION }}/bin:$PATH" >> $GITHUB_ENV
 
-      # 核心步骤：清理所有缓存，确保纯净构建
       - name: Clean Gradle Cache
         run: |
           chmod +x ./gradlew
           ./gradlew clean --no-daemon
 
-      # 构建命令：添加--no-build-cache，彻底禁用缓存
       - name: Build Unsigned Release APK
         run: |
           ./gradlew assembleRelease --no-daemon --stacktrace --no-build-cache --warning-mode all

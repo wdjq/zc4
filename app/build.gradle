@@ -1,12 +1,11 @@
-// 仅应用必要插件，不使用Kotlin则删除kotlin插件
+// 仅应用项目级声明的插件，无重复声明
 plugins {
     id 'com.android.application'
-    // id 'org.jetbrains.kotlin.android' // 无Kotlin代码则注释此行
 }
 
 android {
     namespace 'com.yourpackage.license'
-    compileSdk 34 // 与targetSdk一致，避免Gradle警告
+    compileSdk 34
 
     defaultConfig {
         applicationId 'com.yourpackage.license'
@@ -17,7 +16,6 @@ android {
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
-        // NDK配置仅保留核心参数，避免冗余
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++14 -frtti -fexceptions -fvisibility=hidden -O2"
@@ -26,7 +24,6 @@ android {
             }
         }
 
-        // 仅开启viewBinding，其他全部关闭
         buildFeatures {
             viewBinding true
             buildConfig false
@@ -39,18 +36,11 @@ android {
         }
     }
 
-    // 编译选项仅指定Java版本
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // Kotlin选项（无Kotlin代码则删除此块）
-    kotlinOptions {
-        jvmTarget = '1.8' // 与Java版本兼容，避免冲突
-    }
-
-    // 唯一的externalNativeBuild配置
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
@@ -58,7 +48,6 @@ android {
         }
     }
 
-    // 构建类型仅保留必要开关，无任何冗余
     buildTypes {
         release {
             minifyEnabled true
@@ -74,22 +63,25 @@ android {
         }
     }
 
-    // Lint配置仅保留必要禁用项
     lint {
         abortOnError false
         checkReleaseBuilds false
         disable 'MissingTranslation', 'ExtraTranslation'
     }
 
-    // 禁用所有可能导致冲突的缓存
     configurationCache {
         enabled false
     }
 }
 
-// 依赖直接指定版本，无任何Version Catalog，避免解析冲突
+// 配置模块级仓库（与项目级一致，避免依赖下载失败）
+repositories {
+    google()
+    mavenCentral()
+}
+
 dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0' // 无Kotlin则替换为 implementation 'androidx.core:core:1.12.0'
+    implementation 'androidx.core:core:1.12.0' // 无Kotlin，用纯Java版本
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
