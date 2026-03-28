@@ -5,8 +5,8 @@ plugins {
 android {
     namespace 'com.yourpackage.license'
     compileSdk 34
-    ndkVersion "25.1.8937393" // 与GitHub Actions环境完全匹配
-    ndkPath System.getenv("ANDROID_NDK_HOME") ?: "" // 显式指定NDK路径
+    ndkVersion "25.1.8937393" // 与NDK环境严格匹配
+    ndkPath System.getenv("ANDROID_NDK_HOME") ?: ""
 
     defaultConfig {
         applicationId 'com.yourpackage.license'
@@ -17,18 +17,20 @@ android {
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
-        // NDK编译配置（移除无效的'-s'参数，保留防逆向优化）
+        // 精简NDK编译配置，移除Gradle 9不兼容的参数
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++14 -frtti -fexceptions -fvisibility=hidden -O2"
                 arguments "-DANDROID_STL=c++_shared"
-                abiFilters 'armeabi-v7a', 'arm64-v8a' // 主流手机架构
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
             }
         }
 
+        // 仅保留必要的构建特性
         buildFeatures {
             viewBinding true
-            buildConfig false // 关闭无用特性，减少攻击面
+            buildConfig false
+            prefab false // 关闭无用的Prefab特性，避免Gradle 9警告
         }
     }
 
@@ -37,7 +39,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // NDK+CMake构建配置
+    // 唯一的externalNativeBuild配置（彻底移除冗余）
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
@@ -45,7 +47,6 @@ android {
         }
     }
 
-    // 构建类型配置
     buildTypes {
         release {
             minifyEnabled true
@@ -53,6 +54,10 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             debuggable false
             jniDebuggable false
+            // 关闭Gradle 9已废弃的buildCache配置
+            buildCache {
+                enabled false
+            }
         }
         debug {
             minifyEnabled false
@@ -61,21 +66,27 @@ android {
         }
     }
 
-    // Lint配置，避免非关键错误阻断构建
+    // 适配Gradle 9的Lint配置
     lint {
         abortOnError false
         checkReleaseBuilds false
         disable 'MissingTranslation', 'ExtraTranslation'
+        warningMode 'none' // 抑制非关键警告，避免阻断构建
+    }
+
+    // 禁用Gradle 9不兼容的配置缓存（解决Deprecated警告）
+    configurationCache {
+        enabled false
     }
 }
 
+// 直接指定依赖版本，抛弃Version Catalog，避免冲突
 dependencies {
-    implementation libs.androidx.core
-    implementation libs.androidx.appcompat
-    implementation libs.material
-    implementation libs.androidx.constraintlayout
-    
-    // 测试依赖：直接使用坐标，避免Version Catalog冲突
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'

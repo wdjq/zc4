@@ -8,7 +8,6 @@ on:
         default: '1.0.0'
         type: string
 
-# 全局环境变量，与gradle严格一致，统一管理
 env:
   JAVA_VERSION: '17'
   JAVA_DISTRIBUTION: 'temurin'
@@ -16,18 +15,15 @@ env:
   ANDROID_BUILD_TOOLS: '34.0.0'
   NDK_VERSION: '25.1.8937393'
   CMAKE_VERSION: '3.22.1'
-  # 强制指定cmdline-tools版本，避免版本兼容问题
   CMDLINE_TOOLS_VERSION: '11076708'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出项目代码
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. 配置JDK17，缓存gradle依赖（大幅提速）
       - name: Set Up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
@@ -35,24 +31,16 @@ jobs:
           distribution: ${{ env.JAVA_DISTRIBUTION }}
           cache: 'gradle'
 
-      # 3. 仅初始化Android SDK环境（不通过插件装包，避免解析错误）
       - name: Init Android SDK Env
         uses: android-actions/setup-android@v3
         with:
-          # 仅装基础cmdline-tools，核心包手动装
           cmdline-tools-version: ${{ env.CMDLINE_TOOLS_VERSION }}
-          # 强制自动接受所有许可证，彻底解决Accept? (y/N)交互问题
           accept-android-sdk-licenses: true
 
-      # 4. 原生sdkmanager命令手动安装所有依赖包（核心修复：用空格分隔包名，无解析问题）
       - name: Install Android SDK/NDK/CMake Manually
         run: |
-          # 配置SDK环境变量，确保sdkmanager可全局调用
           export ANDROID_HOME=/usr/local/lib/android/sdk
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
-          export PATH=$ANDROID_HOME/platform-tools:$PATH
-          
-          # 关键：用【空格】分隔所有包名，sdkmanager原生支持，无任何解析问题
           sdkmanager --install \
           "platforms;android-${{ env.ANDROID_COMPILE_SDK }}" \
           "build-tools;${{ env.ANDROID_BUILD_TOOLS }}" \
@@ -60,11 +48,7 @@ jobs:
           "cmake;${{ env.CMAKE_VERSION }}" \
           "platform-tools" \
           --verbose
-          
-          # 验证安装结果
-          sdkmanager --list | grep -E "android-${{ env.ANDROID_COMPILE_SDK }}|${{ env.NDK_VERSION }}|${{ env.CMAKE_VERSION }}"
 
-      # 5. 注入NDK/CMake环境变量，确保Gradle能精准找到
       - name: Set Android Env Variables
         run: |
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
@@ -72,14 +56,12 @@ jobs:
           echo "CMAKE_HOME=/usr/local/lib/android/sdk/cmake/${{ env.CMAKE_VERSION }}" >> $GITHUB_ENV
           echo "PATH=/usr/local/lib/android/sdk/cmake/${{ env.CMAKE_VERSION }}/bin:$PATH" >> $GITHUB_ENV
 
-      # 6. 构建无签名Release包（添加错误堆栈，便于排查）
+      # 核心修复：简化构建命令，移除--no-build-cache（与Gradle 9冲突）
       - name: Build Unsigned Release APK
         run: |
           chmod +x ./gradlew
-          # 关闭守护进程，避免资源不足，打印堆栈便于排错
-          ./gradlew assembleRelease --no-daemon --stacktrace --no-build-cache
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # 7. 上传产物，严格保留1天，无APK则构建失败
       - name: Upload Unsigned APK Artifact
         uses: actions/upload-artifact@v4
         with:

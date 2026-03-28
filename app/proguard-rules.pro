@@ -19,3 +19,22 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# 保留Native桥接类
+-keep class com.yourpackage.license.NativeLicenseManager { *; }
+-keep class com.yourpackage.license.NativeLicenseManager$* { *; }
+
+# 保留Native方法
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# 保留AndroidX核心类，避免混淆后崩溃
+-keep class androidx.** { *; }
+-keep interface androidx.** { *; }
+
+# 保留Material组件
+-keep class com.google.android.material.** { *; }
+
+# 禁用部分优化，避免Gradle 9过度优化导致的问题
+-dontoptimize
+-dontshrink
