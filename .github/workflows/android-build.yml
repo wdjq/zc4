@@ -1,0 +1,39 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+      with:
+        ndk-version: '25.1.8937393'
+        cmake-version: '3.22.1'
+
+    - name: Build with Gradle
+      run: ./gradlew build
+      env:
+        ANDROID_NDK_HOME: ${{ runner.tool_cache }}/android/ndk/25.1.8937393
+        ANDROID_HOME: ${{ runner.tool_cache }}/android/sdk
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: apk-files
+        path: app/build/outputs/apk/

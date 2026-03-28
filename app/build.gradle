@@ -1,0 +1,53 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+android {
+    namespace 'com.yourpackage.license'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.yourpackage.license'
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        
+        // 配置NDK路径（通过环境变量获取）
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++14 -frtti -fexceptions"
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    buildFeatures {
+        viewBinding true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    
+    // 配置NDK和CMake
+    externalNativeBuild {
+        cmake {
+            path "CMakeLists.txt"
+            version "3.22.1" // 指定CMake版本
+        }
+    }
+    
+    // 配置NDK路径（通过环境变量获取）
+    ndkVersion "25.1.8937393" // 指定NDK版本
+}
+
+dependencies {
+    implementation libs.androidx.core
+    implementation libs.androidx.appcompat
+    implementation libs.material
+    implementation libs.androidx.constraintlayout
+}
