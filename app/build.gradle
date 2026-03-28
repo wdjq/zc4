@@ -1,15 +1,12 @@
+// 仅应用必要插件，不使用Kotlin则删除kotlin插件
 plugins {
-    alias(libs.plugins.android.application)
+    id 'com.android.application'
+    // id 'org.jetbrains.kotlin.android' // 无Kotlin代码则注释此行
 }
-
-// 全局禁用Gradle 9不兼容的配置缓存（替代嵌套的buildCache配置）
-gradle.configurationCache.enabled = false
 
 android {
     namespace 'com.yourpackage.license'
-    compileSdk 34
-    ndkVersion "25.1.8937393"
-    ndkPath System.getenv("ANDROID_NDK_HOME") ?: ""
+    compileSdk 34 // 与targetSdk一致，避免Gradle警告
 
     defaultConfig {
         applicationId 'com.yourpackage.license'
@@ -20,7 +17,7 @@ android {
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
-        // NDK编译配置（精简到最低必要参数）
+        // NDK配置仅保留核心参数，避免冗余
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++14 -frtti -fexceptions -fvisibility=hidden -O2"
@@ -29,19 +26,31 @@ android {
             }
         }
 
+        // 仅开启viewBinding，其他全部关闭
         buildFeatures {
             viewBinding true
             buildConfig false
-            prefab false // 关闭无用特性，避免Gradle 9解析警告
+            prefab false
+            dataBinding false
+            compose false
+            aidl false
+            renderScript false
+            shaders false
         }
     }
 
+    // 编译选项仅指定Java版本
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // 唯一的externalNativeBuild配置（无冗余）
+    // Kotlin选项（无Kotlin代码则删除此块）
+    kotlinOptions {
+        jvmTarget = '1.8' // 与Java版本兼容，避免冲突
+    }
+
+    // 唯一的externalNativeBuild配置
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
@@ -49,6 +58,7 @@ android {
         }
     }
 
+    // 构建类型仅保留必要开关，无任何冗余
     buildTypes {
         release {
             minifyEnabled true
@@ -56,7 +66,6 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             debuggable false
             jniDebuggable false
-            // 【关键修复】删除嵌套的buildCache配置（Gradle 9不支持该位置配置）
         }
         debug {
             minifyEnabled false
@@ -65,18 +74,22 @@ android {
         }
     }
 
-    // Lint配置（兼容Gradle 9的警告处理）
+    // Lint配置仅保留必要禁用项
     lint {
         abortOnError false
         checkReleaseBuilds false
         disable 'MissingTranslation', 'ExtraTranslation'
-        warningMode 'none'
+    }
+
+    // 禁用所有可能导致冲突的缓存
+    configurationCache {
+        enabled false
     }
 }
 
-// 直接指定依赖版本（无Version Catalog，无兼容性问题）
+// 依赖直接指定版本，无任何Version Catalog，避免解析冲突
 dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.core:core-ktx:1.12.0' // 无Kotlin则替换为 implementation 'androidx.core:core:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
