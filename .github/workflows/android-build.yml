@@ -26,6 +26,10 @@ jobs:
         ndk-version: '25.1.8937393'
         cmake-version: '3.22.1'
 
+    # 关键修复：设置 gradlew 执行权限
+    - name: Set executable permission for gradlew
+      run: chmod +x gradlew
+
     - name: Build with Gradle
       run: ./gradlew build
       env:
