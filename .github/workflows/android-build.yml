@@ -1,5 +1,4 @@
 name: Android Unsigned Release Build [手动触发]
-# 手动触发，支持自定义版本号
 on:
   workflow_dispatch:
     inputs:
@@ -9,7 +8,7 @@ on:
         default: '1.0.0'
         type: string
 
-# 全局环境变量，与gradle严格对齐
+# 全局环境变量，与gradle严格一致，统一管理
 env:
   JAVA_VERSION: '17'
   JAVA_DISTRIBUTION: 'temurin'
@@ -17,8 +16,8 @@ env:
   ANDROID_BUILD_TOOLS: '34.0.0'
   NDK_VERSION: '25.1.8937393'
   CMAKE_VERSION: '3.22.1'
-  # 国内源加速（可选，解决GitHub服务器拉取SDK慢的问题）
-  ANDROID_SDK_URL: 'https://dl.google.com/android/repository'
+  # 强制指定cmdline-tools版本，避免版本兼容问题
+  CMDLINE_TOOLS_VERSION: '11076708'
 
 jobs:
   build:
@@ -28,7 +27,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. 配置JDK17环境，缓存gradle依赖
+      # 2. 配置JDK17，缓存gradle依赖（大幅提速）
       - name: Set Up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
@@ -36,40 +35,51 @@ jobs:
           distribution: ${{ env.JAVA_DISTRIBUTION }}
           cache: 'gradle'
 
-      # 3. 配置Android SDK环境（核心修复：正确拆分包名，自动接受许可证）
-      - name: Set Up Android Build Environment
+      # 3. 仅初始化Android SDK环境（不通过插件装包，避免解析错误）
+      - name: Init Android SDK Env
         uses: android-actions/setup-android@v3
         with:
-          # 自动接受所有Android SDK许可证，无需手动交互
+          # 仅装基础cmdline-tools，核心包手动装
+          cmdline-tools-version: ${{ env.CMDLINE_TOOLS_VERSION }}
+          # 强制自动接受所有许可证，彻底解决Accept? (y/N)交互问题
           accept-android-sdk-licenses: true
-          # 正确配置需要安装的包，**每个包单独一行**，避免换行被识别为单个包
-          packages: |
-            platforms;android-${{ env.ANDROID_COMPILE_SDK }}
-            build-tools;${{ env.ANDROID_BUILD_TOOLS }}
-            ndk;${{ env.NDK_VERSION }}
-            cmake;${{ env.CMAKE_VERSION }}
-            # 补充必要的工具，防止依赖缺失
-            cmdline-tools;latest
-            build-tools;${{ env.ANDROID_BUILD_TOOLS }}
-            platform-tools
 
-      # 4. 手动验证SDK安装（可选，便于排查问题）
-      - name: Verify Android SDK Installation
+      # 4. 原生sdkmanager命令手动安装所有依赖包（核心修复：用空格分隔包名，无解析问题）
+      - name: Install Android SDK/NDK/CMake Manually
         run: |
-          # 查看已安装的包
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list
-          # 配置环境变量，确保gradle能找到NDK/CMake
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
-          echo "CMAKE_HOME=$ANDROID_HOME/cmake/${{ env.CMAKE_VERSION }}" >> $GITHUB_ENV
+          # 配置SDK环境变量，确保sdkmanager可全局调用
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+          export PATH=$ANDROID_HOME/platform-tools:$PATH
+          
+          # 关键：用【空格】分隔所有包名，sdkmanager原生支持，无任何解析问题
+          sdkmanager --install \
+          "platforms;android-${{ env.ANDROID_COMPILE_SDK }}" \
+          "build-tools;${{ env.ANDROID_BUILD_TOOLS }}" \
+          "ndk;${{ env.NDK_VERSION }}" \
+          "cmake;${{ env.CMAKE_VERSION }}" \
+          "platform-tools" \
+          --verbose
+          
+          # 验证安装结果
+          sdkmanager --list | grep -E "android-${{ env.ANDROID_COMPILE_SDK }}|${{ env.NDK_VERSION }}|${{ env.CMAKE_VERSION }}"
 
-      # 5. 构建无签名Release包（添加权限+静默构建）
+      # 5. 注入NDK/CMake环境变量，确保Gradle能精准找到
+      - name: Set Android Env Variables
+        run: |
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+          echo "CMAKE_HOME=/usr/local/lib/android/sdk/cmake/${{ env.CMAKE_VERSION }}" >> $GITHUB_ENV
+          echo "PATH=/usr/local/lib/android/sdk/cmake/${{ env.CMAKE_VERSION }}/bin:$PATH" >> $GITHUB_ENV
+
+      # 6. 构建无签名Release包（添加错误堆栈，便于排查）
       - name: Build Unsigned Release APK
         run: |
           chmod +x ./gradlew
-          # 静默构建，关闭gradle守护进程，减少资源占用
-          ./gradlew assembleRelease --no-daemon --quiet --stacktrace
+          # 关闭守护进程，避免资源不足，打印堆栈便于排错
+          ./gradlew assembleRelease --no-daemon --stacktrace --no-build-cache
 
-      # 6. 上传产物，保留1天
+      # 7. 上传产物，严格保留1天，无APK则构建失败
       - name: Upload Unsigned APK Artifact
         uses: actions/upload-artifact@v4
         with:
